@@ -2,11 +2,12 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8084";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem("artisan_token");
+  const isAuthRequest = path.startsWith("/api/auth/");
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...((options.headers as Record<string, string>) || {}),
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (token && !isAuthRequest) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
