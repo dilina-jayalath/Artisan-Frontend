@@ -54,10 +54,12 @@ export default function SellerDashboard() {
     setLoading(true);
     try {
       const sellerListings = await listingApi.getBySeller(user.userId);
-      const [sellerOrders, sellerReviews] = await Promise.all([
+      const [sellerOrdersResult, sellerReviewsResult] = await Promise.allSettled([
         orderApi.getSellerOrders(user.userId),
         sellerListings.length > 0 ? reviewApi.getForListings(sellerListings.map((listing) => listing.id)) : Promise.resolve([]),
       ]);
+      const sellerOrders = sellerOrdersResult.status === "fulfilled" ? sellerOrdersResult.value : [];
+      const sellerReviews = sellerReviewsResult.status === "fulfilled" ? sellerReviewsResult.value : [];
 
       const listingTitleById = Object.fromEntries(sellerListings.map((listing) => [listing.id, listing.title]));
 
@@ -69,6 +71,10 @@ export default function SellerDashboard() {
           listingTitle: listingTitleById[review.listingId] || "Listing",
         })),
       );
+
+      if (sellerOrdersResult.status === "rejected" || sellerReviewsResult.status === "rejected") {
+        toast.error("Some dashboard sections could not be loaded");
+      }
     } catch (err: any) {
       toast.error(err.message || "Failed to load seller workspace");
     } finally {
