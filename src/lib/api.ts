@@ -76,7 +76,6 @@ export interface Listing {
 }
 
 export interface CreateListingPayload {
-  sellerId?: string;
   title: string;
   description: string;
   category: string;

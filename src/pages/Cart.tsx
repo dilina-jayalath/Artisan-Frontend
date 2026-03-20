@@ -9,18 +9,25 @@ import { toast } from "sonner";
 
 export default function CartPage() {
   const { user } = useAuth();
-  const { items, removeItem, clearCart, total } = useCart();
+  const { items, removeItem, clearCart } = useCart();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
 
   useEffect(() => {
     if (!user) {
       navigate("/login");
+      return;
     }
+
+    setLoading(false);
   }, [user, navigate]);
 
+  const total = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+
   const handleCheckout = async () => {
-    if (!user || items.length === 0) return;
+    if (!user) return;
+
     setCheckingOut(true);
     try {
       await orderApi.checkout(user.userId);
@@ -42,7 +49,11 @@ export default function CartPage() {
         <ShoppingCart className="w-6 h-6" /> Your Cart
       </h1>
 
-      {items.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : items.length === 0 ? (
         <div className="text-center py-20 space-y-3">
           <p className="text-muted-foreground">Your cart is empty</p>
           <Button variant="outline" onClick={() => navigate("/listings")}>
@@ -57,62 +68,33 @@ export default function CartPage() {
                 key={item.listingId}
                 className="flex items-center justify-between p-4 rounded-lg border bg-card"
               >
-                <div className="flex-1">
+                <div>
                   <p className="font-medium">{item.title}</p>
                   <p className="text-sm text-muted-foreground">
-                    Qty: {item.quantity} × ${item.unitPrice.toFixed(2)}
+                    Qty: {item.quantity} x ${item.unitPrice.toFixed(2)}
                   </p>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   <p className="font-bold tabular-nums">
                     ${(item.unitPrice * item.quantity).toFixed(2)}
                   </p>
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => removeItem(item.listingId)}
-                    className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
+                    aria-label={`Remove ${item.title} from cart`}
                   >
-                    <Trash2 className="w-4 h-4 text-destructive" />
-                  </button>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
-
           <div className="flex items-center justify-between pt-4 border-t">
             <span className="text-lg font-bold">Total</span>
-            <span className="text-lg font-bold tabular-nums">
-              ${total.toFixed(2)}
-            </span>
+            <span className="text-lg font-bold tabular-nums">${total.toFixed(2)}</span>
           </div>
-
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => navigate("/listings")}
-            >
-              Continue Shopping
-            </Button>
-            <Button
-              onClick={handleCheckout}
-              disabled={checkingOut}
-              className="flex-1"
-            >
-              {checkingOut ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Checkout"
-              )}
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
           <Button onClick={handleCheckout} disabled={checkingOut} className="w-full" size="lg">
             {checkingOut ? "Processing..." : "Checkout"}
           </Button>

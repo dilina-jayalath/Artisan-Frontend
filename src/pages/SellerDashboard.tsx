@@ -36,7 +36,7 @@ export default function SellerDashboard() {
     if (!form.title || !form.description || form.price <= 0) return;
     setLoading(true);
     try {
-      await listingApi.create({ ...form, sellerId: user.userId });
+      await listingApi.create(form);
       toast.success("Listing created!");
       navigate("/listings");
     } catch (err: any) {
