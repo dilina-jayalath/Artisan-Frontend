@@ -10,20 +10,34 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (token && !isAuthRequest) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const contentType = res.headers.get("content-type") || "";
+
   if (!res.ok) {
+    if (contentType.includes("application/json")) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.message || body?.error || res.statusText);
+    }
+
     const body = await res.text();
     throw new Error(body || res.statusText);
   }
+
+  if (contentType.includes("application/json")) {
+    return (await res.json()) as T;
+  }
+
   const text = await res.text();
-  return text ? JSON.parse(text) : ({} as T);
+  return text ? (JSON.parse(text) as T) : ({} as T);
 }
 
 // ── Auth ──
 export interface AuthResponse {
   token: string;
   userId: string;
+  email: string;
   role: string;
   displayName: string;
+  expiresIn: number;
 }
 
 export interface RegisterPayload {
@@ -49,13 +63,11 @@ export interface UserProfile {
   avatarUrl?: string;
   role: "BUYER" | "SELLER";
   country?: string;
-  active: boolean;
-  createdAt: string;
 }
 
 export const userApi = {
   getProfile: (id: string) => request<UserProfile>(`/api/users/${id}`),
-  updateProfile: (id: string, data: Partial<UserProfile>) =>
+  updateProfile: (id: string, data: Partial<Pick<UserProfile, "displayName" | "country" | "avatarUrl">>) =>
     request<UserProfile>(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 };
 
@@ -73,10 +85,10 @@ export interface Listing {
   stockQuantity: number;
   active: boolean;
   createdAt: string;
-  updatedAt: string;
 }
 
 export interface CreateListingPayload {
+  sellerId: string;
   title: string;
   description: string;
   category: string;
@@ -92,6 +104,7 @@ export const listingApi = {
   getById: (id: string) => request<Listing>(`/api/listings/${id}`),
   search: (q: string) => request<Listing[]>(`/api/listings/search?q=${encodeURIComponent(q)}`),
   getByCategory: (cat: string) => request<Listing[]>(`/api/listings/category/${encodeURIComponent(cat)}`),
+  getBySeller: (sellerId: string) => request<Listing[]>(`/api/listings/seller/${encodeURIComponent(sellerId)}`),
   create: (data: CreateListingPayload) =>
     request<Listing>("/api/listings", { method: "POST", body: JSON.stringify(data) }),
 };
@@ -122,12 +135,11 @@ export interface Order {
   totalAmount: number;
   currency: string;
   createdAt: string;
-  updatedAt: string;
 }
 
 export const orderApi = {
   addToCart: (buyerId: string, listingId: string, quantity: number) =>
-    request<Cart>("/api/orders/cart", {
+    request<void>("/api/orders/cart", {
       method: "POST",
       headers: { "X-Buyer-Id": buyerId },
       body: JSON.stringify({ listingId, quantity }),
@@ -139,6 +151,8 @@ export const orderApi = {
     }),
   getOrders: (buyerId: string) =>
     request<Order[]>("/api/orders", { headers: { "X-Buyer-Id": buyerId } }),
+  getSellerOrders: (sellerId: string) =>
+    request<Order[]>(`/api/orders/seller/${encodeURIComponent(sellerId)}`),
   getOrder: (id: string) => request<Order>(`/api/orders/${id}`),
 };
 
@@ -166,6 +180,10 @@ export interface CreateReviewPayload {
 export const reviewApi = {
   getForListing: (listingId: string) =>
     request<Review[]>(`/api/reviews/listing/${listingId}`),
+  getForListings: (listingIds: string[]) =>
+    request<Review[]>(
+      `/api/reviews/listings?${listingIds.map((id) => `listingIds=${encodeURIComponent(id)}`).join("&")}`,
+    ),
   create: (data: CreateReviewPayload) =>
     request<Review>("/api/reviews", { method: "POST", body: JSON.stringify(data) }),
 };

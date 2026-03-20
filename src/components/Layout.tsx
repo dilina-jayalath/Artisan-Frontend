@@ -1,8 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { ShoppingCart, Package, User, LogOut, Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { LayoutDashboard, LogOut, Package, Search, ShoppingCart, User } from "lucide-react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, isAuthenticated } = useAuth();
@@ -11,28 +11,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/listings?q=${encodeURIComponent(searchQuery.trim())}`);
-    }
+    if (!searchQuery.trim()) return;
+    navigate(`/listings?q=${encodeURIComponent(searchQuery.trim())}`);
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-md border-b">
-        <div className="container-page flex items-center justify-between h-16 gap-4">
-          <Link to="/" className="text-xl font-bold tracking-tight text-foreground shrink-0">
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-50 border-b bg-card/80 backdrop-blur-md">
+        <div className="container-page flex h-16 items-center justify-between gap-4">
+          <Link to="/" className="shrink-0 text-xl font-bold tracking-tight text-foreground">
             Artisan
           </Link>
 
-          <form onSubmit={handleSearch} className="hidden sm:flex flex-1 max-w-md mx-4">
+          <form onSubmit={handleSearch} className="mx-4 hidden max-w-md flex-1 sm:flex">
             <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search handmade goods..."
-                className="w-full h-9 pl-9 pr-4 rounded-lg border bg-muted/50 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="h-9 w-full rounded-lg border bg-muted/50 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
           </form>
@@ -41,32 +40,40 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <Link to="/listings">
               <Button variant="ghost" size="sm">Browse</Button>
             </Link>
+
             {isAuthenticated ? (
               <>
                 {user?.role === "SELLER" && (
                   <Link to="/seller">
                     <Button variant="ghost" size="sm">
-                      <Plus className="w-4 h-4 mr-1" /> Sell
+                      <LayoutDashboard className="mr-1 h-4 w-4" /> Studio
                     </Button>
                   </Link>
                 )}
                 <Link to="/cart">
-                  <Button variant="ghost" size="icon" className="relative">
-                    <ShoppingCart className="w-4 h-4" />
+                  <Button variant="ghost" size="sm">
+                    <ShoppingCart className="mr-1 h-4 w-4" /> Cart
                   </Button>
                 </Link>
                 <Link to="/orders">
-                  <Button variant="ghost" size="icon">
-                    <Package className="w-4 h-4" />
+                  <Button variant="ghost" size="sm">
+                    <Package className="mr-1 h-4 w-4" /> Orders
                   </Button>
                 </Link>
                 <Link to="/profile">
-                  <Button variant="ghost" size="icon">
-                    <User className="w-4 h-4" />
+                  <Button variant="ghost" size="sm">
+                    <User className="mr-1 h-4 w-4" /> Profile
                   </Button>
                 </Link>
-                <Button variant="ghost" size="icon" onClick={() => { logout(); navigate("/"); }}>
-                  <LogOut className="w-4 h-4" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    logout();
+                    navigate("/");
+                  }}
+                >
+                  <LogOut className="mr-1 h-4 w-4" /> Sign out
                 </Button>
               </>
             ) : (
@@ -78,11 +85,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1">{children}</main>
+      <main>{children}</main>
 
-      <footer className="border-t py-8 mt-16">
+      <footer className="mt-16 border-t py-8">
         <div className="container-page text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} Artisan Marketplace. Handmade with care.
+          Copyright {new Date().getFullYear()} Artisan Marketplace. Handmade with care.
         </div>
       </footer>
     </div>
