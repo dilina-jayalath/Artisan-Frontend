@@ -9,6 +9,7 @@ const statusColors: Record<string, string> = {
   PAID: "bg-blue-100 text-blue-800",
   SHIPPED: "bg-accent/20 text-accent",
   DELIVERED: "bg-green-100 text-green-800",
+  CANCELLED: "bg-red-100 text-red-800",
 };
 
 export default function OrdersPage() {

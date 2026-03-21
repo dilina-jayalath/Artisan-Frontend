@@ -130,7 +130,7 @@ export interface OrderItem extends CartItem {
 export interface Order {
   id: string;
   buyerId: string;
-  status: "PENDING" | "PAID" | "SHIPPED" | "DELIVERED";
+  status: "PENDING" | "PAID" | "SHIPPED" | "DELIVERED" | "CANCELLED";
   items: OrderItem[];
   totalAmount: number;
   currency: string;
