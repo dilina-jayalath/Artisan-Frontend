@@ -425,6 +425,19 @@ export default function ListingDetailPage() {
                 <p className="text-sm text-muted-foreground">
                   {r.comment || "No written comment."}
                 </p>
+                {r.sellerReply && (
+                  <div className="rounded-md border bg-muted/40 px-3 py-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Seller reply
+                    </p>
+                    <p className="mt-1 text-sm">{r.sellerReply}</p>
+                    {r.sellerReplyUpdatedAt && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Updated {new Date(r.sellerReplyUpdatedAt).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

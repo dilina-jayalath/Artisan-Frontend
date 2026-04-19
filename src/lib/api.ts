@@ -167,6 +167,10 @@ export interface Review {
   rating: number;
   comment: string;
   createdAt: string;
+  sellerReplyUserId?: string;
+  sellerReply?: string;
+  sellerReplyCreatedAt?: string;
+  sellerReplyUpdatedAt?: string;
 }
 
 export interface CreateReviewPayload {
@@ -175,6 +179,11 @@ export interface CreateReviewPayload {
   userId: string;
   rating: number;
   comment: string;
+}
+
+export interface SellerReviewReplyPayload {
+  sellerId: string;
+  reply: string;
 }
 
 export const reviewApi = {
@@ -186,4 +195,9 @@ export const reviewApi = {
     ),
   create: (data: CreateReviewPayload) =>
     request<Review>("/api/reviews", { method: "POST", body: JSON.stringify(data) }),
+  replyToReview: (reviewId: string, data: SellerReviewReplyPayload) =>
+    request<Review>(`/api/reviews/${encodeURIComponent(reviewId)}/seller-reply`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
 };
