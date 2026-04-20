@@ -99,6 +99,8 @@ export interface CreateListingPayload {
   stockQuantity: number;
 }
 
+export type UpdateListingPayload = CreateListingPayload;
+
 export const listingApi = {
   getAll: () => request<Listing[]>("/api/listings"),
   getById: (id: string) => request<Listing>(`/api/listings/${id}`),
@@ -107,6 +109,15 @@ export const listingApi = {
   getBySeller: (sellerId: string) => request<Listing[]>(`/api/listings/seller/${encodeURIComponent(sellerId)}`),
   create: (data: CreateListingPayload) =>
     request<Listing>("/api/listings", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: UpdateListingPayload) =>
+    request<Listing>(`/api/listings/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string, sellerId: string) =>
+    request<void>(`/api/listings/${encodeURIComponent(id)}?sellerId=${encodeURIComponent(sellerId)}`, {
+      method: "DELETE",
+    }),
 };
 
 // ── Orders / Cart ──
@@ -130,7 +141,7 @@ export interface OrderItem extends CartItem {
 export interface Order {
   id: string;
   buyerId: string;
-  status: "PENDING" | "PAID" | "SHIPPED" | "DELIVERED" | "CANCELLED";
+  status: "PENDING" | "PAID" | "SHIPPED" | "DELIVERED";
   items: OrderItem[];
   totalAmount: number;
   currency: string;

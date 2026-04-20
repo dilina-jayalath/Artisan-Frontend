@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { listingApi, reviewApi, orderApi, type Listing, type Order, type Review } from "@/lib/api";
+import { listingApi, reviewApi, orderApi, type Listing, type Review } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import StarRating from "@/components/StarRating";
 import { Loader2, ShoppingCart, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 
-const REVIEWABLE_STATUSES: Order["status"][] = ["PAID", "SHIPPED", "DELIVERED"];
+const getErrorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message ? error.message : fallback;
 
 export default function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -19,102 +18,20 @@ export default function ListingDetailPage() {
   const navigate = useNavigate();
   const [listing, setListing] = useState<Listing | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [buyerOrders, setBuyerOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ordersLoading, setOrdersLoading] = useState(false);
   const [qty, setQty] = useState(1);
   const [adding, setAdding] = useState(false);
-  const [reviewRating, setReviewRating] = useState(0);
-  const [reviewComment, setReviewComment] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState("");
-  const [submittingReview, setSubmittingReview] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-
-    let active = true;
-    setLoading(true);
-    setReviewRating(0);
-    setReviewComment("");
-
-    Promise.allSettled([listingApi.getById(id), reviewApi.getForListing(id)])
-      .then(([listingResult, reviewResult]) => {
-        if (!active) return;
-
-        if (listingResult.status === "rejected") {
-          setListing(null);
-          setReviews([]);
-          toast.error("Failed to load listing");
-          return;
-        }
-
-        setListing(listingResult.value);
-
-        if (reviewResult.status === "fulfilled") {
-          setReviews(reviewResult.value);
-        } else {
-          setReviews([]);
-          toast.error("Failed to load reviews");
-        }
+    Promise.all([listingApi.getById(id), reviewApi.getForListing(id)])
+      .then(([l, r]) => {
+        setListing(l);
+        setReviews(r);
       })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
+      .catch(() => toast.error("Failed to load listing"))
+      .finally(() => setLoading(false));
   }, [id]);
-
-  useEffect(() => {
-    if (!user || user.role !== "BUYER") {
-      setBuyerOrders([]);
-      setOrdersLoading(false);
-      return;
-    }
-
-    let active = true;
-    setOrdersLoading(true);
-
-    orderApi.getOrders(user.userId)
-      .then((orders) => {
-        if (active) setBuyerOrders(orders);
-      })
-      .catch(() => {
-        if (!active) return;
-        setBuyerOrders([]);
-        toast.error("Failed to load your orders");
-      })
-      .finally(() => {
-        if (active) setOrdersLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!listing || !user || user.role !== "BUYER") {
-      if (selectedOrderId) setSelectedOrderId("");
-      return;
-    }
-
-    const nextEligibleOrders = buyerOrders.filter((order) =>
-      REVIEWABLE_STATUSES.includes(order.status) &&
-      order.items.some((item) => item.listingId === listing.id) &&
-      !reviews.some((review) => review.userId === user.userId && review.orderId === order.id),
-    );
-
-    if (nextEligibleOrders.length === 0) {
-      if (selectedOrderId) setSelectedOrderId("");
-      return;
-    }
-
-    if (!nextEligibleOrders.some((order) => order.id === selectedOrderId)) {
-      setSelectedOrderId(nextEligibleOrders[0].id);
-    }
-  }, [buyerOrders, listing, reviews, selectedOrderId, user]);
 
   const addToCart = async () => {
     if (!user || !listing) return;
@@ -134,40 +51,10 @@ export default function ListingDetailPage() {
       toast.success("Added to cart!");
       // Optionally navigate to cart
       setTimeout(() => navigate("/cart"), 500);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to add to cart");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to add to cart"));
     } finally {
       setAdding(false);
-    }
-  };
-
-  const submitReview = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!user || user.role !== "BUYER" || !listing || !selectedOrderId) return;
-    if (reviewRating < 1) {
-      toast.error("Select a star rating");
-      return;
-    }
-
-    setSubmittingReview(true);
-    try {
-      const createdReview = await reviewApi.create({
-        listingId: listing.id,
-        orderId: selectedOrderId,
-        userId: user.userId,
-        rating: reviewRating,
-        comment: reviewComment.trim(),
-      });
-
-      setReviews((current) => [createdReview, ...current]);
-      setReviewRating(0);
-      setReviewComment("");
-      toast.success("Review submitted");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to submit review");
-    } finally {
-      setSubmittingReview(false);
     }
   };
 
@@ -187,18 +74,6 @@ export default function ListingDetailPage() {
   const avgRating = reviews.length
     ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
     : 0;
-  const purchasedOrders = !listing || !user || user.role !== "BUYER"
-    ? []
-    : buyerOrders.filter((order) =>
-        REVIEWABLE_STATUSES.includes(order.status) &&
-        order.items.some((item) => item.listingId === listing.id),
-      );
-  const eligibleOrders = !listing || !user || user.role !== "BUYER"
-    ? []
-    : purchasedOrders.filter((order) =>
-        !reviews.some((review) => review.userId === user.userId && review.orderId === order.id),
-      );
-  const selectedOrder = eligibleOrders.find((order) => order.id === selectedOrderId) ?? null;
 
   return (
     <div className="container-page py-8 space-y-12 animate-fade-up">
@@ -299,104 +174,7 @@ export default function ListingDetailPage() {
 
       {/* Reviews */}
       <section className="space-y-6 border-t pt-8">
-        <div className="space-y-1">
-          <h2 className="text-xl font-bold">Reviews ({reviews.length})</h2>
-          <p className="text-sm text-muted-foreground">
-            Ratings and comments from verified buyers who purchased this item.
-          </p>
-        </div>
-
-        {!user ? (
-          <div className="rounded-xl border bg-card p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <h3 className="font-semibold">Want to add a review?</h3>
-              <p className="text-sm text-muted-foreground">
-                Sign in with a buyer account after purchasing this item.
-              </p>
-            </div>
-            <Button variant="outline" onClick={() => navigate("/login")}>
-              Sign in
-            </Button>
-          </div>
-        ) : user.role === "BUYER" ? (
-          <div className="rounded-xl border bg-card p-5 space-y-4">
-            <div className="space-y-1">
-              <h3 className="font-semibold">Write a review</h3>
-              <p className="text-sm text-muted-foreground">
-                Reviews are available for paid purchases of this product.
-              </p>
-            </div>
-
-            {ordersLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading your eligible orders...
-              </div>
-            ) : eligibleOrders.length > 0 ? (
-              <form onSubmit={submitReview} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Your rating</Label>
-                  <div className="flex items-center gap-3">
-                    <StarRating rating={reviewRating} onChange={setReviewRating} size={20} />
-                    <span className="text-sm text-muted-foreground">
-                      {reviewRating > 0 ? `${reviewRating}/5` : "Select a rating"}
-                    </span>
-                  </div>
-                </div>
-
-                {eligibleOrders.length > 1 ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="review-order">Order</Label>
-                    <select
-                      id="review-order"
-                      value={selectedOrderId}
-                      onChange={(event) => setSelectedOrderId(event.target.value)}
-                      className="h-10 w-full rounded-lg border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      {eligibleOrders.map((order) => (
-                        <option key={order.id} value={order.id}>
-                          {`Order #${order.id.slice(0, 8)} - ${new Date(order.createdAt).toLocaleDateString()}`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : selectedOrder ? (
-                  <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                    {`Reviewing Order #${selectedOrder.id.slice(0, 8)} from ${new Date(selectedOrder.createdAt).toLocaleDateString()}`}
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <Label htmlFor="review-comment">Comment</Label>
-                  <Textarea
-                    id="review-comment"
-                    value={reviewComment}
-                    onChange={(event) => setReviewComment(event.target.value)}
-                    maxLength={1000}
-                    placeholder="Share what you liked about the craftsmanship, quality, or delivery."
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {reviewComment.length}/1000 characters
-                  </p>
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={submittingReview || !selectedOrderId || reviewRating < 1}
-                >
-                  {submittingReview ? "Submitting..." : "Submit review"}
-                </Button>
-              </form>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {purchasedOrders.length > 0
-                  ? "You have already reviewed every eligible purchase of this product."
-                  : "Purchase this product to unlock reviews."}
-              </p>
-            )}
-          </div>
-        ) : null}
-
+        <h2 className="text-xl font-bold">Reviews ({reviews.length})</h2>
         {reviews.length === 0 ? (
           <p className="text-muted-foreground">No reviews yet.</p>
         ) : (
@@ -415,18 +193,11 @@ export default function ListingDetailPage() {
                       {r.userDisplayName}
                     </span>
                   </div>
-                  <div className="text-right space-y-1">
-                    <StarRating rating={r.rating} size={14} />
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(r.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
+                  <StarRating rating={r.rating} size={14} />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {r.comment || "No written comment."}
-                </p>
+                <p className="text-sm text-muted-foreground">{r.comment}</p>
                 {r.sellerReply && (
-                  <div className="rounded-md border bg-muted/40 px-3 py-2">
+                  <div className="mt-3 rounded-lg bg-muted/60 p-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Seller reply
                     </p>

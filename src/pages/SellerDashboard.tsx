@@ -3,26 +3,18 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { listingApi, orderApi, reviewApi, type CreateListingPayload, type Listing, type Order, type Review } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { Loader2, MessageSquare, Package, Pencil, Plus, RefreshCw, Send, Store, X } from "lucide-react";
+import { Loader2, MessageSquare, Package, Pencil, Plus, RefreshCw, Save, Send, Store, Trash2, X } from "lucide-react";
 
 const CATEGORIES = ["jewelry", "textiles", "pottery", "woodwork"];
+
+type ListingForm = Omit<CreateListingPayload, "sellerId">;
 
 type SellerReview = Review & {
   listingTitle?: string;
 };
 
-const initialForm = (): Omit<CreateListingPayload, "sellerId"> => ({
+const initialForm = (): ListingForm => ({
   title: "",
   description: "",
   category: CATEGORIES[0],
@@ -33,12 +25,20 @@ const initialForm = (): Omit<CreateListingPayload, "sellerId"> => ({
   country: "",
 });
 
+const getErrorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message ? error.message : fallback;
+
 export default function SellerDashboard() {
   const { user } = useAuth();
-  const [form, setForm] = useState<Omit<CreateListingPayload, "sellerId">>(initialForm);
+  const [form, setForm] = useState<ListingForm>(initialForm);
   const [imageUrl, setImageUrl] = useState("");
+  const [editForm, setEditForm] = useState<ListingForm | null>(null);
+  const [editImageUrl, setEditImageUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [editingListingId, setEditingListingId] = useState<string | null>(null);
+  const [updatingListingId, setUpdatingListingId] = useState<string | null>(null);
+  const [deletingListingId, setDeletingListingId] = useState<string | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<SellerReview[]>([]);
@@ -46,10 +46,14 @@ export default function SellerDashboard() {
   const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
   const [editingReplyReviewId, setEditingReplyReviewId] = useState<string | null>(null);
 
-  const update = <K extends keyof Omit<CreateListingPayload, "sellerId">>(
+  const update = <K extends keyof ListingForm>(
     key: K,
-    value: Omit<CreateListingPayload, "sellerId">[K],
+    value: ListingForm[K],
   ) => setForm((current) => ({ ...current, [key]: value }));
+
+  const updateEdit = <K extends keyof ListingForm>(key: K, value: ListingForm[K]) => {
+    setEditForm((current) => (current ? { ...current, [key]: value } : current));
+  };
 
   const addImage = () => {
     if (!imageUrl.trim()) return;
@@ -59,6 +63,17 @@ export default function SellerDashboard() {
 
   const removeImage = (index: number) => {
     update("imageUrls", form.imageUrls.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const addEditImage = () => {
+    if (!editForm || !editImageUrl.trim()) return;
+    updateEdit("imageUrls", [...editForm.imageUrls, editImageUrl.trim()]);
+    setEditImageUrl("");
+  };
+
+  const removeEditImage = (index: number) => {
+    if (!editForm) return;
+    updateEdit("imageUrls", editForm.imageUrls.filter((_, currentIndex) => currentIndex !== index));
   };
 
   const loadDashboard = useCallback(async () => {
@@ -75,13 +90,14 @@ export default function SellerDashboard() {
       const sellerReviews = sellerReviewsResult.status === "fulfilled" ? sellerReviewsResult.value : [];
 
       const listingTitleById = Object.fromEntries(sellerListings.map((listing) => [listing.id, listing.title]));
-      const reviewsWithListings = sellerReviews.map((review) => ({
-        ...review,
-        listingTitle: listingTitleById[review.listingId] || "Listing",
-      }));
 
       setListings(sellerListings);
       setOrders(sellerOrders);
+      const reviewsWithListings = sellerReviews.map((review) => ({
+          ...review,
+          listingTitle: listingTitleById[review.listingId] || "Listing",
+        }));
+
       setReviews(reviewsWithListings);
       setReplyDrafts(
         Object.fromEntries(reviewsWithListings.map((review) => [review.id, review.sellerReply || ""])),
@@ -90,8 +106,8 @@ export default function SellerDashboard() {
       if (sellerOrdersResult.status === "rejected" || sellerReviewsResult.status === "rejected") {
         toast.error("Some dashboard sections could not be loaded");
       }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load seller workspace");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to load seller workspace"));
     } finally {
       setLoading(false);
     }
@@ -116,10 +132,79 @@ export default function SellerDashboard() {
       setImageUrl("");
       toast.success("Listing created");
       await loadDashboard();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create listing");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to create listing"));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const startEditingListing = (listing: Listing) => {
+    setEditingListingId(listing.id);
+    setEditImageUrl("");
+    setEditForm({
+      title: listing.title,
+      description: listing.description || "",
+      category: listing.category,
+      imageUrls: listing.imageUrls || [],
+      price: listing.price,
+      currency: listing.currency,
+      stockQuantity: listing.stockQuantity,
+      country: listing.country || "",
+    });
+  };
+
+  const cancelEditingListing = () => {
+    setEditingListingId(null);
+    setEditForm(null);
+    setEditImageUrl("");
+  };
+
+  const handleListingUpdate = async (event: React.FormEvent<HTMLFormElement>, listing: Listing) => {
+    event.preventDefault();
+    if (!user || user.role !== "SELLER" || !editForm) return;
+    if (!editForm.title.trim() || !editForm.description.trim() || editForm.price <= 0) return;
+
+    setUpdatingListingId(listing.id);
+    try {
+      const updatedListing = await listingApi.update(listing.id, {
+        sellerId: user.userId,
+        ...editForm,
+      });
+
+      setListings((current) => current.map((item) => (item.id === listing.id ? updatedListing : item)));
+      setReviews((current) =>
+        current.map((review) =>
+          review.listingId === listing.id ? { ...review, listingTitle: updatedListing.title } : review,
+        ),
+      );
+      cancelEditingListing();
+      toast.success("Listing updated");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to update listing"));
+    } finally {
+      setUpdatingListingId(null);
+    }
+  };
+
+  const handleListingDelete = async (listing: Listing) => {
+    if (!user || user.role !== "SELLER") return;
+    const confirmed = window.confirm(`Delete "${listing.title}"? This removes it from your storefront.`);
+    if (!confirmed) return;
+
+    setDeletingListingId(listing.id);
+    try {
+      await listingApi.delete(listing.id, user.userId);
+      setListings((current) => current.filter((item) => item.id !== listing.id));
+      setReviews((current) => current.filter((review) => review.listingId !== listing.id));
+      if (editingListingId === listing.id) {
+        cancelEditingListing();
+      }
+      toast.success("Listing deleted");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to delete listing"));
+    } finally {
+      setDeletingListingId(null);
     }
   };
 
@@ -127,16 +212,13 @@ export default function SellerDashboard() {
     setReplyDrafts((current) => ({ ...current, [reviewId]: value }));
   };
 
-  const openReplyEditor = (review: SellerReview) => {
+  const startEditingReply = (review: SellerReview) => {
     setReplyDrafts((current) => ({ ...current, [review.id]: review.sellerReply || "" }));
     setEditingReplyReviewId(review.id);
   };
 
-  const closeReplyEditor = () => {
-    const review = reviews.find((item) => item.id === editingReplyReviewId);
-    if (review) {
-      setReplyDrafts((current) => ({ ...current, [review.id]: review.sellerReply || "" }));
-    }
+  const cancelEditingReply = (review: SellerReview) => {
+    setReplyDrafts((current) => ({ ...current, [review.id]: review.sellerReply || "" }));
     setEditingReplyReviewId(null);
   };
 
@@ -160,15 +242,19 @@ export default function SellerDashboard() {
       setReviews((current) =>
         current.map((item) =>
           item.id === review.id
-            ? { ...updatedReview, listingTitle: item.listingTitle }
+            ? {
+                ...item,
+                ...updatedReview,
+                listingTitle: item.listingTitle,
+              }
             : item,
         ),
       );
       setReplyDrafts((current) => ({ ...current, [review.id]: updatedReview.sellerReply || reply }));
-      toast.success(review.sellerReply ? "Reply updated" : "Reply posted");
       setEditingReplyReviewId(null);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save reply");
+      toast.success(review.sellerReply ? "Reply updated" : "Reply posted");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to save reply"));
     } finally {
       setReplyingReviewId(null);
     }
@@ -187,8 +273,6 @@ export default function SellerDashboard() {
     0,
   );
   const inputCls = "h-10 w-full rounded-lg border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
-  const editingReplyReview = reviews.find((review) => review.id === editingReplyReviewId) ?? null;
-  const editingReplyDraft = editingReplyReview ? replyDrafts[editingReplyReview.id] ?? "" : "";
 
   return (
     <div className="container-page space-y-8 py-8 animate-fade-up">
@@ -381,24 +465,205 @@ export default function SellerDashboard() {
               <p className="text-sm text-muted-foreground">No listings yet. Publish your first item above.</p>
             ) : (
               <div className="space-y-3">
-                {listings.map((listing) => (
-                  <div key={listing.id} className="rounded-xl border p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium">{listing.title}</p>
-                        <p className="text-sm text-muted-foreground">{listing.category}</p>
+                {listings.map((listing) => {
+                  const isEditingListing = editingListingId === listing.id;
+                  const isUpdatingListing = updatingListingId === listing.id;
+                  const isDeletingListing = deletingListingId === listing.id;
+
+                  return (
+                    <div key={listing.id} className="rounded-xl border p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">{listing.title}</p>
+                          <p className="text-sm text-muted-foreground">{listing.category}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Link to={`/listings/${listing.id}`} className="px-2 text-sm font-medium text-accent hover:underline">
+                            View
+                          </Link>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => startEditingListing(listing)}
+                            aria-label="Edit listing"
+                            title="Edit listing"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => void handleListingDelete(listing)}
+                            disabled={isDeletingListing}
+                            aria-label="Delete listing"
+                            title="Delete listing"
+                          >
+                            {isDeletingListing ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
                       </div>
-                      <Link to={`/listings/${listing.id}`} className="text-sm font-medium text-accent hover:underline">
-                        View
-                      </Link>
+
+                      {isEditingListing && editForm ? (
+                        <form onSubmit={(event) => handleListingUpdate(event, listing)} className="mt-4 space-y-3 border-t pt-4">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <label htmlFor={`listing-title-${listing.id}`} className="text-sm font-medium">Title</label>
+                              <input
+                                id={`listing-title-${listing.id}`}
+                                type="text"
+                                value={editForm.title}
+                                onChange={(event) => updateEdit("title", event.target.value)}
+                                className={inputCls}
+                                required
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <label htmlFor={`listing-category-${listing.id}`} className="text-sm font-medium">Category</label>
+                              <select
+                                id={`listing-category-${listing.id}`}
+                                value={editForm.category}
+                                onChange={(event) => updateEdit("category", event.target.value)}
+                                className={inputCls}
+                              >
+                                {CATEGORIES.map((category) => (
+                                  <option key={category} value={category}>
+                                    {category.charAt(0).toUpperCase() + category.slice(1)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label htmlFor={`listing-description-${listing.id}`} className="text-sm font-medium">Description</label>
+                            <textarea
+                              id={`listing-description-${listing.id}`}
+                              value={editForm.description}
+                              onChange={(event) => updateEdit("description", event.target.value)}
+                              rows={3}
+                              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                              required
+                            />
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <label htmlFor={`listing-country-${listing.id}`} className="text-sm font-medium">Country</label>
+                              <input
+                                id={`listing-country-${listing.id}`}
+                                type="text"
+                                value={editForm.country}
+                                onChange={(event) => updateEdit("country", event.target.value)}
+                                className={inputCls}
+                              />
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="space-y-2">
+                                <label htmlFor={`listing-price-${listing.id}`} className="text-sm font-medium">Price</label>
+                                <input
+                                  id={`listing-price-${listing.id}`}
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  value={editForm.price || ""}
+                                  onChange={(event) => updateEdit("price", Number(event.target.value) || 0)}
+                                  className={inputCls}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label htmlFor={`listing-currency-${listing.id}`} className="text-sm font-medium">Currency</label>
+                                <input
+                                  id={`listing-currency-${listing.id}`}
+                                  type="text"
+                                  value={editForm.currency}
+                                  onChange={(event) => updateEdit("currency", event.target.value.toUpperCase())}
+                                  className={inputCls}
+                                  maxLength={3}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label htmlFor={`listing-stock-${listing.id}`} className="text-sm font-medium">Stock</label>
+                                <input
+                                  id={`listing-stock-${listing.id}`}
+                                  type="number"
+                                  min="0"
+                                  value={editForm.stockQuantity}
+                                  onChange={(event) => updateEdit("stockQuantity", Number(event.target.value) || 0)}
+                                  className={inputCls}
+                                  required
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label htmlFor={`listing-image-${listing.id}`} className="text-sm font-medium">Image URLs</label>
+                            <div className="flex gap-2">
+                              <input
+                                id={`listing-image-${listing.id}`}
+                                type="url"
+                                value={editImageUrl}
+                                onChange={(event) => setEditImageUrl(event.target.value)}
+                                className={`${inputCls} flex-1`}
+                                placeholder="https://example.com/product.jpg"
+                              />
+                              <Button type="button" variant="outline" size="icon" onClick={addEditImage}>
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            {editForm.imageUrls.length > 0 && (
+                              <div className="flex flex-wrap gap-2 pt-2">
+                                {editForm.imageUrls.map((url, index) => (
+                                  <div key={`${url}-${index}`} className="group relative h-16 w-16 overflow-hidden rounded-md bg-muted">
+                                    <img src={url} alt="" className="h-full w-full object-cover" />
+                                    <button
+                                      type="button"
+                                      onClick={() => removeEditImage(index)}
+                                      className="absolute inset-0 flex items-center justify-center bg-foreground/50 opacity-0 transition-opacity group-hover:opacity-100"
+                                    >
+                                      <X className="h-4 w-4 text-background" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex justify-end gap-2">
+                            <Button type="button" variant="outline" onClick={cancelEditingListing} disabled={isUpdatingListing}>
+                              Cancel
+                            </Button>
+                            <Button type="submit" disabled={isUpdatingListing || !editForm.title.trim() || editForm.price <= 0}>
+                              {isUpdatingListing ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Save className="mr-2 h-4 w-4" />
+                              )}
+                              {isUpdatingListing ? "Saving..." : "Save changes"}
+                            </Button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          <span>{listing.currency} {listing.price.toFixed(2)}</span>
+                          <span>{listing.stockQuantity} in stock</span>
+                          <span>{listing.active ? "Active" : "Hidden"}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
-                      <span>{listing.currency} {listing.price.toFixed(2)}</span>
-                      <span>{listing.stockQuantity} in stock</span>
-                      <span>{listing.active ? "Active" : "Hidden"}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -453,7 +718,7 @@ export default function SellerDashboard() {
                 <MessageSquare className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold">Customer reviews</h2>
+                <h2 className="text-xl font-semibold">Recent reviews</h2>
                 <p className="text-sm text-muted-foreground">Feedback left on your listings.</p>
               </div>
             </div>
@@ -466,8 +731,11 @@ export default function SellerDashboard() {
               <p className="text-sm text-muted-foreground">No reviews yet.</p>
             ) : (
               <div className="space-y-3">
-                {reviews.map((review) => {
+                {reviews.slice(0, 6).map((review) => {
                   const replyDraft = replyDrafts[review.id] ?? review.sellerReply ?? "";
+                  const isSavingReply = replyingReviewId === review.id;
+                  const isEditingReply = editingReplyReviewId === review.id;
+                  const showReplyForm = !review.sellerReply || isEditingReply;
 
                   return (
                     <div key={review.id} className="rounded-xl border p-4">
@@ -480,27 +748,21 @@ export default function SellerDashboard() {
                       </div>
                       <p className="mt-3 text-sm text-muted-foreground">{review.comment || "No written comment."}</p>
 
-                      {review.sellerReply ? (
-                        <div className="mt-3 rounded-lg border bg-muted/40 p-3">
+                      {review.sellerReply && (
+                        <div className="mt-4 rounded-lg bg-muted/60 p-3">
                           <div className="flex items-start justify-between gap-3">
                             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Your reply</p>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="-mr-2 -mt-2 h-8 w-8"
-                                    onClick={() => openReplyEditor(review)}
-                                    aria-label="Update reply"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Update reply</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
+                              onClick={() => startEditingReply(review)}
+                              aria-label="Edit reply"
+                              title="Edit reply"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
                           </div>
                           <p className="mt-1 text-sm">{review.sellerReply}</p>
                           {review.sellerReplyUpdatedAt && (
@@ -509,34 +771,45 @@ export default function SellerDashboard() {
                             </p>
                           )}
                         </div>
-                      ) : (
+                      )}
+
+                      {showReplyForm && (
                         <form onSubmit={(event) => handleReplySubmit(event, review)} className="mt-4 space-y-2">
                           <label htmlFor={`seller-reply-${review.id}`} className="text-sm font-medium">
-                            Reply to review
+                            {review.sellerReply ? "Edit reply" : "Reply to review"}
                           </label>
-                          <Textarea
+                          <textarea
                             id={`seller-reply-${review.id}`}
                             value={replyDraft}
                             onChange={(event) => updateReplyDraft(review.id, event.target.value)}
                             maxLength={1000}
                             rows={3}
-                            className="min-h-[92px]"
-                            placeholder="Write a public response to this buyer."
+                            className="min-h-[88px] w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            placeholder="Write a public response for this customer."
                           />
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-center justify-between gap-3">
                             <span className="text-xs text-muted-foreground">{replyDraft.length}/1000 characters</span>
-                            <Button
-                              type="submit"
-                              size="sm"
-                              disabled={replyingReviewId === review.id || !replyDraft.trim()}
-                            >
-                              {replyingReviewId === review.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Send className="h-4 w-4" />
+                            <div className="flex items-center gap-2">
+                              {review.sellerReply && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => cancelEditingReply(review)}
+                                  disabled={isSavingReply}
+                                >
+                                  Cancel
+                                </Button>
                               )}
-                              {replyingReviewId === review.id ? "Saving..." : "Post reply"}
-                            </Button>
+                              <Button type="submit" size="sm" disabled={isSavingReply || !replyDraft.trim()}>
+                                {isSavingReply ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Send className="mr-2 h-4 w-4" />
+                                )}
+                                {isSavingReply ? "Saving..." : review.sellerReply ? "Save reply" : "Post reply"}
+                              </Button>
+                            </div>
                           </div>
                         </form>
                       )}
@@ -548,63 +821,6 @@ export default function SellerDashboard() {
           </section>
         </div>
       </div>
-
-      <Dialog open={Boolean(editingReplyReview)} onOpenChange={(open) => {
-        if (!open) closeReplyEditor();
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Update reply</DialogTitle>
-            <DialogDescription>
-              Edit your public response to this customer review.
-            </DialogDescription>
-          </DialogHeader>
-
-          {editingReplyReview && (
-            <form onSubmit={(event) => handleReplySubmit(event, editingReplyReview)} className="space-y-4">
-              <div className="rounded-lg border bg-muted/40 p-3">
-                <p className="text-sm font-medium">{editingReplyReview.userDisplayName}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {editingReplyReview.comment || "No written comment."}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor={`seller-reply-dialog-${editingReplyReview.id}`} className="text-sm font-medium">
-                  Your reply
-                </label>
-                <Textarea
-                  id={`seller-reply-dialog-${editingReplyReview.id}`}
-                  value={editingReplyDraft}
-                  onChange={(event) => updateReplyDraft(editingReplyReview.id, event.target.value)}
-                  maxLength={1000}
-                  rows={5}
-                  className="min-h-[140px]"
-                  placeholder="Write a public response to this buyer."
-                />
-                <p className="text-xs text-muted-foreground">{editingReplyDraft.length}/1000 characters</p>
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={closeReplyEditor}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={replyingReviewId === editingReplyReview.id || !editingReplyDraft.trim()}
-                >
-                  {replyingReviewId === editingReplyReview.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Pencil className="h-4 w-4" />
-                  )}
-                  {replyingReviewId === editingReplyReview.id ? "Saving..." : "Update reply"}
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
