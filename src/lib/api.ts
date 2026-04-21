@@ -69,6 +69,8 @@ export const userApi = {
   getProfile: (id: string) => request<UserProfile>(`/api/users/${id}`),
   updateProfile: (id: string, data: Partial<Pick<UserProfile, "displayName" | "country" | "avatarUrl">>) =>
     request<UserProfile>(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteAccount: (id: string) =>
+    request<void>(`/api/users/${id}`, { method: "DELETE" }),
 };
 
 // ── Listings ──
